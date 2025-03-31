@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Questions</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container mt-5 mb-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h1 class="h3 mb-0">PDF to Questions</h1>
+                        <span class="badge bg-light text-primary">AI-Powered</span>
+                    </div>
+                    <div class="card-body">
+                        {% with messages = get_flashed_messages() %}
+                            {% if messages %}
+                                {% for message in messages %}
+                                    <div class="alert alert-warning">{{ message }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                        
+                        <p class="lead">Upload a PDF file to extract multiple-choice questions</p>
+                        
+                        <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="upload-form">
+                            <div class="mb-4">
+                                <label for="pdf_file" class="form-label d-flex justify-content-between">
+                                    <span>PDF File <span class="text-danger">*</span></span>
+                                    <span class="text-muted small">Supported format: PDF</span>
+                                </label>
+                                <div class="input-group">
+                                    <input type="file" class="form-control" id="pdf_file" name="pdf_file" accept=".pdf" required>
+                                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="tooltip" data-bs-placement="top" title="Select a PDF file containing multiple-choice questions">
+                                        <i class="bi bi-question-circle"></i>
+                                    </button>
+                                </div>
+                                <div id="file-preview" class="mt-2 d-none">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-file-earmark-pdf text-danger me-2" style="font-size: 1.5rem;"></i>
+                                        <span id="file-name"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mb-4">
+                                <div class="card-header bg-light">
+                                    <h5 class="card-title mb-0">Page Settings</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label for="start_page" class="form-label">Start Page</label>
+                                            <div class="input-group">
+                                                <input type="number" class="form-control" id="start_page" name="start_page" value="1" min="1" required>
+                                                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="tooltip" data-bs-placement="top" title="First page to process (1-indexed)">
+                                                    <i class="bi bi-question-circle"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="max_pages" class="form-label">Max Pages</label>
+                                            <div class="input-group">
+                                                <input type="number" class="form-control" id="max_pages" name="max_pages" min="1">
+                                                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="tooltip" data-bs-placement="top" title="Maximum number of pages to process (leave empty for all pages)">
+                                                    <i class="bi bi-question-circle"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mb-4">
+                                <div class="card-header bg-light">
+                                    <h5 class="card-title mb-0">API Settings</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label for="delay" class="form-label">Delay Between API Calls (seconds)</label>
+                                            <div class="input-group">
+                                                <input type="number" class="form-control" id="delay" name="delay" value="10" min="1" required>
+                                                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="tooltip" data-bs-placement="top" title="Delay between API calls to avoid rate limits">
+                                                    <i class="bi bi-question-circle"></i>
+                                                </button>
+                                            </div>
+                                            <div class="form-text">Increase this value if you encounter API rate limit errors.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-magic me-2"></i>Extract Questions
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="card-footer text-muted">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <p class="mb-0">This tool uses Gemini AI to extract and improve multiple-choice questions from PDF files.</p>
+                            <a href="https://github.com/yourusername/pdf-to-questions" target="_blank" class="text-muted">
+                                <i class="bi bi-github" style="font-size: 1.2rem;"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+        // Initialize tooltips
+        document.addEventListener('DOMContentLoaded', function() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl)
+            });
+            
+            // File preview
+            const fileInput = document.getElementById('pdf_file');
+            const filePreview = document.getElementById('file-preview');
+            const fileName = document.getElementById('file-name');
+            
+            fileInput.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    fileName.textContent = this.files[0].name;
+                    filePreview.classList.remove('d-none');
+                } else {
+                    filePreview.classList.add('d-none');
+                }
+            });
+        });
+    </script>
+</body>
+</html> 
