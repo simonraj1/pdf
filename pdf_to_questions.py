@@ -195,33 +195,68 @@ def extract_text_with_gemini(image_path: str, api_key: str, retry_count: int = 3
         # Try multiple times with different prompts if needed
         for attempt in range(retry_count):
             try:
-                response = model.generate_content([system_prompt, Image.open(image_path)])
+                # Verify the image exists and is valid
+                if not os.path.exists(image_path):
+                    logging.error(f"Image file not found: {image_path}")
+                    return ""
                 
-                if response.text:
-                    # Clean up the extracted text while preserving structure
-                    text = response.text.strip()
+                # Open and verify the image
+                try:
+                    img = Image.open(image_path)
+                    img.verify()  # Verify it's a valid image
+                    img = Image.open(image_path)  # Reopen for actual use
+                except Exception as e:
+                    logging.error(f"Invalid or corrupted image file: {str(e)}")
+                    return ""
+                
+                response = model.generate_content([system_prompt, img])
+                
+                if not response:
+                    logging.error(f"Empty response from Gemini API on attempt {attempt + 1}")
+                    if attempt < retry_count - 1:
+                        time.sleep(delay)
+                        continue
+                
+                if not response.text:
+                    logging.error(f"No text in response from Gemini API on attempt {attempt + 1}")
+                    if attempt < retry_count - 1:
+                        time.sleep(delay)
+                        continue
+                    return ""
+                
+                # Clean up the extracted text while preserving structure
+                text = response.text.strip()
+                
+                if not text:
+                    logging.error(f"Empty text after cleaning on attempt {attempt + 1}")
+                    if attempt < retry_count - 1:
+                        time.sleep(delay)
+                        continue
+                    return ""
+                
+                # Preserve table structures and alignments
+                text = re.sub(r'(\s*\|\s*)', ' | ', text)
+                
+                # Ensure proper spacing for options and lists
+                text = re.sub(r'(?m)^([A-D]\.|\d+\.|\([a-d]\))\s*', r'\1 ', text)
+                
+                # Preserve list structure
+                text = re.sub(r'List\s+(I+|[1-9])', r'\nList \1', text)
+                
+                # Check for potentially missed questions
+                question_numbers = re.findall(r'(?m)^(\d+)\.\s', text)
+                if question_numbers:
+                    numbers = [int(n) for n in question_numbers]
+                    expected = list(range(min(numbers), max(numbers) + 1))
+                    missing = set(expected) - set(numbers)
                     
-                    # Preserve table structures and alignments
-                    text = re.sub(r'(\s*\|\s*)', ' | ', text)
-                    
-                    # Ensure proper spacing for options and lists
-                    text = re.sub(r'(?m)^([A-D]\.|\d+\.|\([a-d]\))\s*', r'\1 ', text)
-                    
-                    # Preserve list structure
-                    text = re.sub(r'List\s+(I+|[1-9])', r'\nList \1', text)
-                    
-                    # Check for potentially missed questions
-                    question_numbers = re.findall(r'(?m)^(\d+)\.\s', text)
-                    if question_numbers:
-                        numbers = [int(n) for n in question_numbers]
-                        expected = list(range(min(numbers), max(numbers) + 1))
-                        missing = set(expected) - set(numbers)
-                        
-                        if missing:
-                            logging.warning(f"Potentially missed questions: {missing}")
-                            continue  # Try another attempt if questions are missing
-                    
-                    return text
+                    if missing:
+                        logging.warning(f"Potentially missed questions: {missing}")
+                        if attempt < retry_count - 1:
+                            time.sleep(delay)
+                            continue
+                
+                return text
                     
             except Exception as e:
                 logging.error(f"Attempt {attempt + 1} failed: {str(e)}")
@@ -712,17 +747,17 @@ def process_pdf_page(pdf_path: str, page_num: int, api_key: str,
         pdf_path: Path to the PDF file
         page_num: Page number to process (1-indexed)
         api_key: Gemini API key
-        retry_count: Number of retry attempts
+        retry_count: Number of retries for API calls
         delay: Delay between retries in seconds
-        temp_dir: Directory to save temporary images
+        temp_dir: Directory for temporary files
     
     Returns:
-        List of extracted questions
+        List of dictionaries containing extracted questions
     """
     try:
-        # Convert the specific page to an image
+        # Convert PDF page to image
         image_paths = convert_pdf_to_images(
-            pdf_path=pdf_path,
+            pdf_path,
             start_page=page_num,
             max_pages=1,
             temp_dir=temp_dir
@@ -734,10 +769,10 @@ def process_pdf_page(pdf_path: str, page_num: int, api_key: str,
         
         image_path = image_paths[0]
         
-        # Extract text from the image
+        # Extract text from image
         extracted_text = extract_text_with_gemini(
-            image_path=image_path,
-            api_key=api_key,
+            image_path,
+            api_key,
             retry_count=retry_count,
             delay=delay
         )
@@ -746,20 +781,31 @@ def process_pdf_page(pdf_path: str, page_num: int, api_key: str,
             logging.error(f"Failed to extract text from page {page_num}")
             return []
         
-        # Extract questions from the text
+        # Extract questions from text
         questions = extract_questions_with_gemini(
-            text=extracted_text,
-            api_key=api_key,
+            extracted_text,
+            api_key,
             retry_count=retry_count,
             delay=delay
         )
         
-        # Add page number to each question
-        for q in questions:
-            q['page_number'] = page_num
+        if not questions:
+            logging.warning(f"No questions found on page {page_num}")
+            return []
         
-        logging.info(f"Extracted {len(questions)} questions from page {page_num}")
-        return questions
+        # Add source page to each question
+        for question in questions:
+            question['source_page'] = page_num
+        
+        # Improve questions
+        improved_questions = improve_questions(questions, api_key)
+        
+        if not improved_questions:
+            logging.warning(f"Failed to improve questions from page {page_num}")
+            return questions  # Return original questions if improvement fails
+        
+        return improved_questions
+        
     except Exception as e:
         logging.error(f"Error processing page {page_num}: {str(e)}")
         return []
